@@ -34,6 +34,40 @@ p_analysis <- p |>
 
     # ---- Era dummy ----
     post_cold_war = as.integer(year >= 1991)
+  ) |>
+  # ---- Year-over-year change DVs on co2_total ----
+  # Guard against non-consecutive years (e.g. DEU 1946-1948 missing) by only
+  # computing delta when this year is exactly one greater than the previous.
+  dplyr::arrange(iso3c, year) |>
+  dplyr::group_by(iso3c) |>
+  dplyr::mutate(
+    .lag_co2  = dplyr::lag(co2_total),
+    .lag_year = dplyr::lag(year),
+    .is_consec = !is.na(.lag_year) & (year - .lag_year == 1L),
+    delta_co2      = ifelse(.is_consec, co2_total - .lag_co2, NA_real_),
+    pct_change_co2 = ifelse(.is_consec,
+                            (co2_total - .lag_co2) / .lag_co2 * 100,
+                            NA_real_)
+  ) |>
+  dplyr::ungroup() |>
+  dplyr::select(-dplyr::starts_with(".lag"), -.is_consec) |>
+  dplyr::mutate(
+    # ---- regime_subtype: factor with democracy as reference ----
+    regime_subtype = factor(
+      regime_subtype,
+      levels = c("democracy", "party", "military",
+                 "personalist", "monarchy", "other_autocracy")
+    ),
+    # ---- party_autocracy indicator (among autocracies only) ----
+    # 1 = pure party regime (regime_subtype == "party")
+    # 0 = other autocracy (military, personalist, monarchy, other_autocracy)
+    # NA = democracy or unclassified
+    party_autocracy = dplyr::case_when(
+      regime_subtype == "party"                              ~ 1L,
+      regime_subtype %in% c("military", "personalist",
+                             "monarchy", "other_autocracy")  ~ 0L,
+      TRUE                                                   ~ NA_integer_
+    )
   )
 
 saveRDS(p_analysis, file.path(DIR_FINAL, "panel_analysis.rds"))
